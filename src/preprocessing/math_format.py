@@ -41,7 +41,10 @@ from typing import List, Dict, Optional, Union, Tuple
 import numpy as np
 from PIL import Image
 from dataclasses import dataclass, asdict
-
+import matplotlib.pyplot as plt
+import pickle
+import os
+import pandas as pd
 
 @dataclass
 class NormalizedMathProblem:
@@ -49,8 +52,6 @@ class NormalizedMathProblem:
     id: str
     problem_type: str  # "calculation" or "proving"
     question: str
-    language: str  # "zh" or "en"
-    image: Optional[Union[np.ndarray, Image.Image]] = None
     image_path: Optional[str] = None
     cot: Optional[str] = None
     
@@ -60,8 +61,6 @@ class NormalizedMathProblem:
     solution: Optional[str] = None
     
     # For proving
-    given: Optional[str] = None
-    to_prove: Optional[str] = None
     statements: Optional[List[str]] = None
     reasons: Optional[List[str]] = None
     elements: Optional[List[str]] = None
@@ -76,9 +75,9 @@ class NormalizedMathProblem:
     def get_prompt_format(self) -> str:
         """Get formatted prompt for LLM input."""
         if self.problem_type == "calculation":
-            prompt = f"{self.question}\n\nChoices: {', '.join(self.choices) if self.choices else 'N/A'}"
+            prompt = f"Question: {self.question}\n\nSolution: {self.solution}\n\nChoices: {', '.join(self.choices) if self.choices else 'N/A'}\n\nAnswer: {self.answer}"
         else:  # proving
-            prompt = f"Given: {self.given}\nTo prove: {self.to_prove}\n\n{self.question}"
+            prompt = f"Question: {self.question}\n\nStatements: {self.statements}\n\nReason: {self.reasons}"
         return prompt
 
 
@@ -86,7 +85,7 @@ class MathCalculationFormatter:
     """Convert calculation format to normalized format."""
     
     @staticmethod
-    def normalize(data: Dict) -> NormalizedMathProblem:
+    def normalize(data: Dict, source_dataset: str) -> NormalizedMathProblem:
         """
         Convert calculation problem to normalized format.
         
@@ -99,14 +98,12 @@ class MathCalculationFormatter:
         problem_id = str(data.get('id', ''))
         
         # Get question in preferred language
-        question = data.get('subject', '')  # Chinese by default
+        question = data.get('English_problem', '')
         if not question:
-            question = data.get('English_problem', '')
-        
-        language = 'zh' if data.get('subject') else 'en'
+            question = data.get('subject', '')
         
         # Get image
-        image = data.get('image') or data.get('img')
+        image_path = os.path.join(source_dataset.split('.')[0], str(problem_id), '.png')
         
         # Extract choices and answer
         choices = data.get('choices', [])
@@ -118,19 +115,18 @@ class MathCalculationFormatter:
         
         # Metadata
         metadata = {
-            'problem_type_category': data.get('problem_type', 'calculation'),
+            'problem_type_category': data.get('problem_form', 'calculation'),
             'formal_point': list(data.get('formal_point', set())) if isinstance(data.get('formal_point'), set) else data.get('formal_point', []),
             'numbers': data.get('numbers', []),
             'manual_program': data.get('manual_program', []),
-            'source_dataset': 'calculation_dataset',
+            'source_dataset': source_dataset,
         }
         
         return NormalizedMathProblem(
             id=problem_id,
             problem_type='calculation',
             question=question,
-            language=language,
-            image=image,
+            image_path=image_path,
             choices=choices,
             answer=answer,
             solution=solution,
@@ -142,7 +138,7 @@ class MathProvingFormatter:
     """Convert proving format to normalized format."""
     
     @staticmethod
-    def normalize(data: Dict) -> NormalizedMathProblem:
+    def normalize(data: Dict, source_dataset: str) -> NormalizedMathProblem:
         """
         Convert proving problem to normalized format.
         
@@ -155,13 +151,10 @@ class MathProvingFormatter:
         problem_id = str(data.get('id', ''))
         
         # Get question
-        question = data.get('input_text') or data.get('question', '')
-        
-        # Detect language
-        language = 'zh' if any(ord(c) > 0x4E00 for c in question) else 'en'
+        question = data.get('question', '') or data.get('input_text', '')
         
         # Get image
-        image = data.get('img') or data.get('image')
+        image_path = os.path.join(source_dataset.split('.')[0], str(problem_id), '.png')
         
         # Extract statements and reasons
         statements = data.get('statement', [])
@@ -169,12 +162,12 @@ class MathProvingFormatter:
         elements = data.get('elements', [])
         
         # Extract given and to_prove
-        given = statements[0] if statements else ""
-        to_prove = statements[-1] if statements else ""
+        # given = statements[0] if statements else ""
+        # to_prove = statements[-1] if statements else ""
         
         # Metadata
         metadata = {
-            'problem_type_category': data.get('problem_type', 'proving'),
+            'problem_type_category': data.get('problem_form', 'proving'),
             'reasoning_skill': data.get('reasoning_skill', ''),
             'proving_sequence': data.get('proving_sequence', []),
             'source_dataset': 'proving_dataset',
@@ -184,10 +177,7 @@ class MathProvingFormatter:
             id=problem_id,
             problem_type='proving',
             question=question,
-            language=language,
-            image=image,
-            given=given,
-            to_prove=to_prove,
+            image_path=image_path,
             statements=statements,
             reasons=reasons,
             elements=elements,
@@ -199,7 +189,7 @@ class MathProblemNormalizer:
     """Main class to normalize math problems."""
     
     @staticmethod
-    def normalize(data: Dict, problem_type: Optional[str] = None) -> NormalizedMathProblem:
+    def normalize(data: Dict,  source_dataset: str, problem_type: Optional[str] = None) -> NormalizedMathProblem:
         """
         Normalize math problem based on type.
         
@@ -222,8 +212,77 @@ class MathProblemNormalizer:
                 raise ValueError("Cannot determine problem type. Please specify explicitly.")
         
         if problem_type == 'calculation':
-            return MathCalculationFormatter.normalize(data)
+            return MathCalculationFormatter.normalize(data, source_dataset)
         elif problem_type == 'proving':
-            return MathProvingFormatter.normalize(data)
+            return MathProvingFormatter.normalize(data, source_dataset)
         else:
             raise ValueError(f"Unknown problem type: {problem_type}")    
+
+    @staticmethod
+    def normalize_batch(data: List[Dict], source_dataset: str, problem_type: Optional[str] = None) -> List[NormalizedMathProblem]:
+        return [MathProblemNormalizer.normalize(problem, source_dataset, problem_type) for problem in data]
+    
+def test_normalize_calculation():
+    data_path = r"dataset\UniGeo_data\UniGeo\calculation_test.pk"
+
+
+    with open(data_path, "rb") as f:
+        data = pickle.load(f)
+
+    data = data[0]
+    normalized_problem = MathProblemNormalizer.normalize(data, source_dataset='calculation_test.pk', problem_type='calculation')
+    print(normalized_problem)
+    print("=" * 100)
+    print(normalized_problem.get_prompt_format())
+    
+def test_normalize_proving():
+    data_path = r"dataset\UniGeo_data\UniGeo\proving_test.pk"
+
+    with open(data_path, "rb") as f:
+        data = pickle.load(f)
+
+    data = data[0:10]
+    normalized_problem = MathProblemNormalizer.normalize_batch(data, source_dataset='proving_test.pk', problem_type='proving')
+    print(normalized_problem)
+    print("=" * 100)
+    normalized_problem = [np.get_prompt_format() for np in normalized_problem]
+    for idx, np in enumerate(normalized_problem):
+        print(f"Problem {idx}:")
+        print(np)
+        print("=" * 50)
+    # df = pd.DataFrame([problem.__dict__ for problem in normalized_problem])
+    # df.to_csv("dataset/UniGeo_data/dataframe/proving_test.csv", index=False)
+    
+def save_normalized_data(data_path: str, save_path: str):
+    try: 
+        with open(data_path, "rb") as f:
+            data = pickle.load(f)
+            
+        data_path = os.path.basename(data_path)
+        problem_type = data_path.split('.')[0].split('_')[0]
+        normalized_problem = MathProblemNormalizer.normalize_batch(data, source_dataset=data_path, problem_type=problem_type)
+
+        df = pd.DataFrame([problem.__dict__ for problem in normalized_problem])
+
+        df.to_csv(save_path, index=False)
+        
+        print(f"Data saved to {save_path}")
+    except Exception as e:
+        print(f"Error when saving data: {e}")    
+    
+    
+if __name__ == "__main__":
+    ## 1. Sample test
+    # test_normalize_calculation()
+    # test_normalize_proving()
+    
+    ## 2. Save normalized data
+    data_dir = "dataset/UniGeo_data/UniGeo"    
+    save_dir = "dataset/UniGeo_data/dataframe"
+    
+    for file in os.listdir(data_dir):
+        true_file = any(x in file for x in ['test', 'val', 'train'])
+        if file.endswith('.pk') and true_file:
+            data_path = os.path.join(data_dir, file)
+            save_path = os.path.join(save_dir, file[:-3] + ".csv")
+            save_normalized_data(data_path, save_path)
