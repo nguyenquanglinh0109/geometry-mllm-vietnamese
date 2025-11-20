@@ -58,7 +58,7 @@ class NormalizedMathProblem:
     # For calculation
     choices: Optional[List[str]] = None
     answer: Optional[str] = None
-    solution: Optional[str] = None
+    choice: Optional[str] = None
     
     # For proving
     statements: Optional[List[str]] = None
@@ -108,10 +108,10 @@ class MathCalculationFormatter:
         # Extract choices and answer
         choices = data.get('choices', [])
         label = data.get('label')
-        answer = choices[label] if label is not None and label < len(choices) else ""
+        choice = choices[label] if label is not None and label < len(choices) else ""
         
         # Build solution from answer text
-        solution = data.get('answer', '')
+        answer = data.get('answer', '')
         
         # Metadata
         metadata = {
@@ -129,7 +129,7 @@ class MathCalculationFormatter:
             image_path=image_path,
             choices=choices,
             answer=answer,
-            solution=solution,
+            choice=choice,
             metadata=metadata
         )
 

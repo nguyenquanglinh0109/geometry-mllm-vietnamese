@@ -1,0 +1,1 @@
+from src.prompt.translate import TRANSLATE_PROMPT
