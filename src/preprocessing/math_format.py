@@ -77,7 +77,7 @@ class NormalizedMathProblem:
         if self.problem_type == "calculation":
             prompt = f"Question: {self.question}\n\nSolution: {self.solution}\n\nChoices: {', '.join(self.choices) if self.choices else 'N/A'}\n\nAnswer: {self.answer}"
         else:  # proving
-            prompt = f"Question: {self.question}\n\nStatements: {self.statements}\n\nReason: {self.reasons}"
+            prompt = f"Question: {self.question}\n\nStatements: {self.statements}\n\nReason: {self.reasons}\n\nAnswer: {self.answer}"
         return prompt
 
 
@@ -124,12 +124,12 @@ class MathCalculationFormatter:
         
         return NormalizedMathProblem(
             id=problem_id,
-            problem_type='calculation',
-            question=question,
             image_path=image_path,
-            choices=choices,
+            question=question,
             answer=answer,
+            choices=choices,
             choice=choice,
+            problem_type='calculation',
             metadata=metadata
         )
 
@@ -160,7 +160,13 @@ class MathProvingFormatter:
         statements = data.get('statement', [])
         reasons = data.get('reason', [])
         elements = data.get('elements', [])
-        
+        answer = []
+        for idx, reason in enumerate(reasons):
+            if reason.lower() == 'given':
+                answer.append(statements[0])
+            else:
+                answer.append(statements[idx] + '(' + reason + ')')
+        answer = ', '.join(answer)        
         # Extract given and to_prove
         # given = statements[0] if statements else ""
         # to_prove = statements[-1] if statements else ""
@@ -175,12 +181,13 @@ class MathProvingFormatter:
         
         return NormalizedMathProblem(
             id=problem_id,
-            problem_type='proving',
-            question=question,
             image_path=image_path,
+            question=question,
+            answer=answer,
             statements=statements,
             reasons=reasons,
             elements=elements,
+            problem_type='proving',
             metadata=metadata
         )
 
